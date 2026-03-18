@@ -668,7 +668,7 @@
         <div class="input-row">
           <textarea id="msg" placeholder="Mesajınızı yazın..."></textarea>
           <button class="mic-btn" id="micBtn" onclick="toggleVoice()">🎤</button>
-          <button class="send-btn" onclick="">Gönder</button>
+          <button class="send-btn" onclick="send()">Gönder</button>
         </div>
       </div>
     </div>
@@ -686,6 +686,12 @@
     const SETTINGS_KEY = "mini_chatgpt_ui_settings";
     const bgImage = document.getElementById("bgImage");
     const motionRange = document.getElementById("motionRange");
+
+    function getSafeUser() {
+      const value = localStorage.getItem("mini_chatgpt_user");
+      if (!value || value === "undefined" || value === "null") return null;
+      return value;
+    }
 
     document.addEventListener("mousemove", (e) => {
       const strength = Number(motionRange.value);
@@ -763,51 +769,51 @@
     }
 
     async function api(path, method = "GET", body = null) {
-  const options = {
-    method,
-    headers: {}
-  };
+      const options = {
+        method,
+        headers: {}
+      };
 
-  if (body) {
-    options.headers["Content-Type"] = "application/json";
-    options.body = JSON.stringify(body);
-  }
-
-  const res = await fetch(API_BASE + path, options);
-
-  let data = null;
-  try {
-    data = await res.json();
-  } catch {
-    data = null;
-  }
-
-  if (!res.ok) {
-    let msg = "Bilinmeyen hata";
-
-    if (data) {
-      if (typeof data.detail === "string") {
-        msg = data.detail;
-      } else if (Array.isArray(data.detail)) {
-        msg = data.detail.map(x => x.msg || JSON.stringify(x)).join(" | ");
-      } else if (data.detail) {
-        msg = JSON.stringify(data.detail);
-      } else if (typeof data.message === "string") {
-        msg = data.message;
-      } else if (data.message) {
-        msg = JSON.stringify(data.message);
-      } else {
-        msg = JSON.stringify(data);
+      if (body) {
+        options.headers["Content-Type"] = "application/json";
+        options.body = JSON.stringify(body);
       }
-    } else {
-      msg = `HTTP ${res.status}`;
+
+      const res = await fetch(API_BASE + path, options);
+
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok) {
+        let msg = "Bilinmeyen hata";
+
+        if (data) {
+          if (typeof data.detail === "string") {
+            msg = data.detail;
+          } else if (Array.isArray(data.detail)) {
+            msg = data.detail.map(x => x.msg || JSON.stringify(x)).join(" | ");
+          } else if (data.detail) {
+            msg = JSON.stringify(data.detail);
+          } else if (typeof data.message === "string") {
+            msg = data.message;
+          } else if (data.message) {
+            msg = JSON.stringify(data.message);
+          } else {
+            msg = JSON.stringify(data);
+          }
+        } else {
+          msg = `HTTP ${res.status}`;
+        }
+
+        throw new Error(msg);
+      }
+
+      return data;
     }
-
-    throw msg;
-  }
-
-  return data;
-}
 
     function toggleMode() {
       isLoginMode = !isLoginMode;
@@ -846,10 +852,10 @@
 
       try {
         const data = await api(endpoint, "POST", { username, password });
-        authMessage.textContent = data.message;
+        authMessage.textContent = data.message || "";
 
         if (data.success && isLoginMode) {
-          currentUser = data.username;
+          currentUser = data.username || username;
           localStorage.setItem("mini_chatgpt_user", currentUser);
           await startApp();
         }
@@ -862,12 +868,23 @@
           authMessage.textContent = "Kayıt başarılı. Şimdi giriş yap.";
         }
       } catch (error) {
-  typingDiv.remove();
-  alert(typeof error === "string" ? error : JSON.stringify(error));
-}
+        authMessage.textContent =
+          typeof error === "string"
+            ? error
+            : (error.message || JSON.stringify(error));
+      }
     }
 
     async function startApp() {
+      currentUser = getSafeUser();
+
+      if (!currentUser) {
+        localStorage.removeItem("mini_chatgpt_user");
+        document.getElementById("authScreen").classList.remove("hidden");
+        document.getElementById("appScreen").classList.add("hidden");
+        return;
+      }
+
       document.getElementById("authScreen").classList.add("hidden");
       document.getElementById("appScreen").classList.remove("hidden");
       document.getElementById("userBadge").textContent = "Kullanıcı: " + currentUser;
@@ -881,7 +898,7 @@
       if (!chats.length) {
         await createNewChat();
       } else {
-        currentChatId = chats[0].id;
+        currentChatId = Number(chats[0].id);
         await renderChatList();
         await renderMessages();
       }
@@ -897,7 +914,7 @@
     async function createNewChat() {
       const result = await api("/chats/create", "POST", { username: currentUser });
       if (result.success) {
-        currentChatId = result.chat_id;
+        currentChatId = Number(result.chat_id);
         await renderChatList();
         await renderMessages();
       }
@@ -911,14 +928,14 @@
 
     async function renameChat(chatId) {
       const chats = await api("/chats/" + encodeURIComponent(currentUser));
-      const chat = chats.find(c => c.id === chatId);
+      const chat = chats.find(c => Number(c.id) === Number(chatId));
       if (!chat) return;
 
       const newTitle = prompt("Yeni chat adı:", chat.title);
       if (!newTitle || !newTitle.trim()) return;
 
       await api("/chats/rename", "POST", {
-        chat_id: chatId,
+        chat_id: Number(chatId),
         title: newTitle.trim()
       });
 
@@ -927,12 +944,12 @@
     }
 
     async function deleteChat(chatId) {
-      await api("/chats/delete", "POST", { chat_id: chatId });
+      await api("/chats/delete", "POST", { chat_id: Number(chatId) });
 
       const chats = await api("/chats/" + encodeURIComponent(currentUser));
-      if (currentChatId === chatId) {
+      if (Number(currentChatId) === Number(chatId)) {
         if (chats.length > 0) {
-          currentChatId = chats[0].id;
+          currentChatId = Number(chats[0].id);
         } else {
           await createNewChat();
           return;
@@ -944,9 +961,9 @@
     }
 
     async function shareChat(chatId) {
-      const result = await api("/chats/share", "POST", { chat_id: chatId });
+      const result = await api("/chats/share", "POST", { chat_id: Number(chatId) });
       if (result.success) {
-        const shareUrl = window.location.origin + "/?share=" + result.share_token;
+        const shareUrl = window.location.origin + window.location.pathname + "?share=" + result.share_token;
         await navigator.clipboard.writeText(shareUrl);
         alert("Paylaşım linki kopyalandı:\n" + shareUrl);
       }
@@ -967,12 +984,12 @@
         })
         .forEach(chat => {
           const item = document.createElement("div");
-          item.className = "chat-item" + (chat.id === currentChatId ? " active" : "");
+          item.className = "chat-item" + (Number(chat.id) === Number(currentChatId) ? " active" : "");
 
           const info = document.createElement("div");
           info.className = "chat-main-info";
           info.onclick = async () => {
-            currentChatId = chat.id;
+            currentChatId = Number(chat.id);
             await renderChatList();
             await renderMessages();
           };
@@ -1051,9 +1068,9 @@
     async function renderMessages() {
       if (!currentChatId) return;
 
-      const messages = await api("/messages/" + currentChatId);
+      const messages = await api("/messages/" + Number(currentChatId));
       const chats = await api("/chats/" + encodeURIComponent(currentUser));
-      const currentChat = chats.find(c => c.id === currentChatId);
+      const currentChat = chats.find(c => Number(c.id) === Number(currentChatId));
 
       const chatBox = document.getElementById("chatBox");
       const chatTitle = document.getElementById("chatTitle");
@@ -1170,57 +1187,79 @@
     }
 
     async function send() {
-  const input = document.getElementById("msg");
-  const message = input.value.trim();
-  const chosenLang = document.getElementById("langSelect").value;
+      const input = document.getElementById("msg");
+      const message = input.value.trim();
+      const chosenLang = document.getElementById("langSelect").value;
 
-  if (!currentUser || currentUser === "undefined" || currentUser === "null") {
-    alert("Önce giriş yapmalısın.");
-    return;
-  }
+      if (!currentUser || currentUser === "undefined" || currentUser === "null") {
+        alert("Önce giriş yapmalısın.");
+        return;
+      }
 
-  if (!message && !selectedImageBase64) return;
+      if (!message && !selectedImageBase64) return;
 
-  const chatBox = document.getElementById("chatBox");
-  const typingDiv = document.createElement("div");
-  typingDiv.className = "message-wrap ai-wrap";
-  typingDiv.innerHTML = `<div class="message ai typing">Yazıyor<span class='dots'></span></div>`;
-  chatBox.appendChild(typingDiv);
-  chatBox.scrollTop = chatBox.scrollHeight;
+      const chatBox = document.getElementById("chatBox");
 
-  try {
-    const res = await api("/chat", "POST", {
-      username: currentUser,
-      chat_id: currentChatId ? Number(currentChatId) : null,
-      message: message || "",
-      image_base64: selectedImageBase64 || null,
-      chosen_language: chosenLang || "auto"
-    });
+      const userWrap = document.createElement("div");
+      userWrap.className = "message-wrap user-wrap";
+      const userDiv = document.createElement("div");
+      userDiv.className = "message user";
+      userDiv.textContent = message || "[Görsel gönderildi]";
+      userWrap.appendChild(userDiv);
+      chatBox.appendChild(userWrap);
 
-    typingDiv.remove();
-    input.value = "";
-    clearSelectedImage();
+      const typingDiv = document.createElement("div");
+      typingDiv.className = "message-wrap ai-wrap";
+      typingDiv.innerHTML = `<div class="message ai typing">Yazıyor<span class='dots'></span></div>`;
+      chatBox.appendChild(typingDiv);
+      chatBox.scrollTop = chatBox.scrollHeight;
 
-    if (res.chat_id) {
-      currentChatId = Number(res.chat_id);
+      input.value = "";
+
+      try {
+        const res = await api("/chat", "POST", {
+          username: currentUser,
+          chat_id: currentChatId ? Number(currentChatId) : null,
+          message: message || "",
+          image_base64: selectedImageBase64 || null,
+          chosen_language: chosenLang || "auto"
+        });
+
+        typingDiv.remove();
+        clearSelectedImage();
+
+        if (res.chat_id) {
+          currentChatId = Number(res.chat_id);
+        }
+
+        await renderChatList();
+        await renderMessages();
+
+        if (res.reply) {
+          speakText(res.reply);
+        }
+      } catch (error) {
+        typingDiv.remove();
+
+        const errWrap = document.createElement("div");
+        errWrap.className = "message-wrap ai-wrap";
+        const errDiv = document.createElement("div");
+        errDiv.className = "message ai";
+        errDiv.textContent =
+          typeof error === "string"
+            ? error
+            : (error.message || JSON.stringify(error) || "Bir hata oluştu.");
+        errWrap.appendChild(errDiv);
+        chatBox.appendChild(errWrap);
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
     }
-
-    await renderChatList();
-    await renderMessages();
-
-    if (res.reply) {
-      speakText(res.reply);
-    }
-  } catch (error) {
-    typingDiv.remove();
-    alert(typeof error === "string" ? error : (error.message || JSON.stringify(error)));
-  }
-}
 
     document.addEventListener("DOMContentLoaded", async () => {
       const params = new URLSearchParams(window.location.search);
       const shareToken = params.get("share");
 
+      currentUser = getSafeUser();
       loadSettings();
       applyColorMode();
       updateTopoStyle();
