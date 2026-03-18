@@ -108,8 +108,8 @@ class ShareChatRequest(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    username: str
-    chat_id: int
+    username: str = ""
+    chat_id: int | None = None
     message: str = ""
     image_base64: str | None = None
     chosen_language: str = "auto"
@@ -342,24 +342,42 @@ def chat(req: ChatRequest):
     if not GROQ_API_KEY:
         raise HTTPException(status_code=500, detail="GROQ_API_KEY is missing.")
 
+    username = req.username.strip()
+    if not username:
+        return {"reply": "Önce giriş yapmalısınız."}
+
     conn = get_conn()
     cur = conn.cursor()
 
-    cur.execute("SELECT id FROM users WHERE username = ?", (req.username,))
+    cur.execute("SELECT id FROM users WHERE username = ?", (username,))
     user = cur.fetchone()
     if not user:
         conn.close()
         return {"reply": "Kullanıcı bulunamadı."}
 
-    cur.execute("SELECT id, title FROM chats WHERE id = ?", (req.chat_id,))
-    chat_row = cur.fetchone()
-    if not chat_row:
-        conn.close()
-        return {"reply": "Sohbet bulunamadı."}
+    chat_id = req.chat_id
+
+    # chat_id yoksa otomatik yeni sohbet oluştur
+    if chat_id is None:
+        cur.execute(
+            "INSERT INTO chats (user_id, title) VALUES (?, ?)",
+            (user["id"], "Yeni Sohbet")
+        )
+        chat_id = cur.lastrowid
+    else:
+        cur.execute("SELECT id, title FROM chats WHERE id = ?", (chat_id,))
+        chat_row = cur.fetchone()
+        if not chat_row:
+            cur.execute(
+                "INSERT INTO chats (user_id, title) VALUES (?, ?)",
+                (user["id"], "Yeni Sohbet")
+            )
+            chat_id = cur.lastrowid
+            chat_row = {"id": chat_id, "title": "Yeni Sohbet"}
 
     cur.execute(
         "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id ASC",
-        (req.chat_id,)
+        (chat_id,)
     )
     history_rows = cur.fetchall()
 
@@ -434,22 +452,30 @@ Rules:
 
         cur.execute(
             "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
-            (req.chat_id, "user", display_user_message)
+            (chat_id, "user", display_user_message)
         )
         cur.execute(
             "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
-            (req.chat_id, "assistant", reply)
+            (chat_id, "assistant", reply)
         )
 
-        if chat_row["title"] == "Yeni Sohbet" and req.message.strip():
+        cur.execute("SELECT title FROM chats WHERE id = ?", (chat_id,))
+        row = cur.fetchone()
+        current_title = row["title"] if row else "Yeni Sohbet"
+
+        if current_title == "Yeni Sohbet" and req.message.strip():
             cur.execute(
                 "UPDATE chats SET title = ? WHERE id = ?",
-                (req.message.strip()[:25], req.chat_id)
+                (req.message.strip()[:25], chat_id)
             )
 
         conn.commit()
         conn.close()
-        return {"reply": reply}
+
+        return {
+            "reply": reply,
+            "chat_id": chat_id
+        }
 
     except Exception as e:
         conn.close()
