@@ -668,7 +668,7 @@
         <div class="input-row">
           <textarea id="msg" placeholder="Mesajınızı yazın..."></textarea>
           <button class="mic-btn" id="micBtn" onclick="toggleVoice()">🎤</button>
-          <button class="send-btn" onclick="send()">Gönder</button>
+          <button class="send-btn" onclick="">Gönder</button>
         </div>
       </div>
     </div>
@@ -1170,43 +1170,52 @@
     }
 
     async function send() {
-      const input = document.getElementById("msg");
-      const message = input.value.trim();
-      const chosenLang = document.getElementById("langSelect").value;
+  const input = document.getElementById("msg");
+  const message = input.value.trim();
+  const chosenLang = document.getElementById("langSelect").value;
 
-      if (!message && !selectedImageBase64) return;
+  if (!currentUser || currentUser === "undefined" || currentUser === "null") {
+    alert("Önce giriş yapmalısın.");
+    return;
+  }
 
-      const chatBox = document.getElementById("chatBox");
-      const typingDiv = document.createElement("div");
-      typingDiv.className = "message-wrap ai-wrap";
-      typingDiv.innerHTML = `<div class="message ai typing">Yazıyor<span class='dots'></span></div>`;
-      chatBox.appendChild(typingDiv);
-      chatBox.scrollTop = chatBox.scrollHeight;
+  if (!message && !selectedImageBase64) return;
 
-      try {
-        const res = await api("/chat", "POST", {
-          username: currentUser,
-          chat_id: currentChatId,
-          message: message || "",
-          image_base64: selectedImageBase64 || null,
-          chosen_language: chosenLang || "auto"
-        });
+  const chatBox = document.getElementById("chatBox");
+  const typingDiv = document.createElement("div");
+  typingDiv.className = "message-wrap ai-wrap";
+  typingDiv.innerHTML = `<div class="message ai typing">Yazıyor<span class='dots'></span></div>`;
+  chatBox.appendChild(typingDiv);
+  chatBox.scrollTop = chatBox.scrollHeight;
 
-        typingDiv.remove();
-        input.value = "";
-        clearSelectedImage();
+  try {
+    const res = await api("/chat", "POST", {
+      username: currentUser,
+      chat_id: currentChatId ? Number(currentChatId) : null,
+      message: message || "",
+      image_base64: selectedImageBase64 || null,
+      chosen_language: chosenLang || "auto"
+    });
 
-        await renderChatList();
-        await renderMessages();
+    typingDiv.remove();
+    input.value = "";
+    clearSelectedImage();
 
-        if (res.reply) {
-          speakText(res.reply);
-        }
-      } catch (error) {
-  typingDiv.remove();
-  alert(typeof error === "string" ? error : JSON.stringify(error));
-}
+    if (res.chat_id) {
+      currentChatId = Number(res.chat_id);
     }
+
+    await renderChatList();
+    await renderMessages();
+
+    if (res.reply) {
+      speakText(res.reply);
+    }
+  } catch (error) {
+    typingDiv.remove();
+    alert(typeof error === "string" ? error : (error.message || JSON.stringify(error)));
+  }
+}
 
     document.addEventListener("DOMContentLoaded", async () => {
       const params = new URLSearchParams(window.location.search);
