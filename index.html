@@ -763,21 +763,51 @@
     }
 
     async function api(path, method = "GET", body = null) {
-      const options = { method, headers: {} };
-      if (body) {
-        options.headers["Content-Type"] = "application/json";
-        options.body = JSON.stringify(body);
+  const options = {
+    method,
+    headers: {}
+  };
+
+  if (body) {
+    options.headers["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+
+  const res = await fetch(API_BASE + path, options);
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+
+  if (!res.ok) {
+    let msg = "Bilinmeyen hata";
+
+    if (data) {
+      if (typeof data.detail === "string") {
+        msg = data.detail;
+      } else if (Array.isArray(data.detail)) {
+        msg = data.detail.map(x => x.msg || JSON.stringify(x)).join(" | ");
+      } else if (data.detail) {
+        msg = JSON.stringify(data.detail);
+      } else if (typeof data.message === "string") {
+        msg = data.message;
+      } else if (data.message) {
+        msg = JSON.stringify(data.message);
+      } else {
+        msg = JSON.stringify(data);
       }
-
-      const res = await fetch(API_BASE + path, options);
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.detail || data.message || "API error");
-      }
-
-      return data;
+    } else {
+      msg = `HTTP ${res.status}`;
     }
+
+    throw msg;
+  }
+
+  return data;
+}
 
     function toggleMode() {
       isLoginMode = !isLoginMode;
@@ -832,8 +862,9 @@
           authMessage.textContent = "Kayıt başarılı. Şimdi giriş yap.";
         }
       } catch (error) {
-        authMessage.textContent = error.message || "Bağlantı hatası.";
-      }
+  typingDiv.remove();
+  alert(typeof error === "string" ? error : JSON.stringify(error));
+}
     }
 
     async function startApp() {
@@ -1172,9 +1203,9 @@
           speakText(res.reply);
         }
       } catch (error) {
-        typingDiv.remove();
-        alert(error.message || "Bağlantı hatası oluştu.");
-      }
+  typingDiv.remove();
+  alert(typeof error === "string" ? error : JSON.stringify(error));
+}
     }
 
     document.addEventListener("DOMContentLoaded", async () => {
