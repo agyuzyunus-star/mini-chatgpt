@@ -1,87 +1,628 @@
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
-<meta charset="UTF-8">
-<title>Mini ChatGPT</title>
-<style>
-body {
-  margin:0;
-  font-family:Arial;
-  background:url("https://raw.githubusercontent.com/agyuzyunus-star/mini-chatgpt/main/background.jpg") no-repeat center/cover;
-  color:white;
-}
-#chat {height:80vh; overflow:auto; padding:20px;}
-input {width:80%; padding:10px;}
-button {padding:10px;}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mini ChatGPT</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    :root{
+      --bg:#070707;
+      --panel:#101010;
+      --panel-2:#171717;
+      --line:rgba(212,175,55,.20);
+      --gold:#d4af37;
+      --gold-2:#f0d77a;
+      --text:#f4e4a3;
+      --muted:#b9a56a;
+      --danger:#d95555;
+    }
+
+    body{
+      margin:0;
+      font-family:Arial,sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(212,175,55,.10), transparent 25%),
+        linear-gradient(180deg, #0b0b0b, #050505);
+      color:var(--text);
+      height:100vh;
+      overflow:hidden;
+    }
+
+    .hidden{display:none !important;}
+
+    .auth-wrap{
+      height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+    }
+
+    .auth-card{
+      width:100%;
+      max-width:420px;
+      background:rgba(10,10,10,.92);
+      border:1px solid var(--line);
+      border-radius:20px;
+      padding:28px;
+      box-shadow:0 0 30px rgba(0,0,0,.35);
+    }
+
+    .title{
+      font-size:30px;
+      font-weight:700;
+      color:var(--gold-2);
+      margin-bottom:8px;
+    }
+
+    .sub{
+      font-size:14px;
+      color:var(--muted);
+      margin-bottom:18px;
+    }
+
+    .auth-card input{
+      width:100%;
+      padding:14px;
+      margin-bottom:12px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:#111;
+      color:var(--text);
+      outline:none;
+    }
+
+    .btn{
+      border:none;
+      border-radius:12px;
+      cursor:pointer;
+      font-weight:700;
+      transition:.2s;
+    }
+
+    .btn-gold{
+      width:100%;
+      padding:14px;
+      color:#111;
+      background:linear-gradient(135deg,var(--gold-2),var(--gold),#9a7616);
+    }
+
+    .btn-gold:hover{filter:brightness(1.05);}
+
+    .switch{
+      margin-top:14px;
+      font-size:14px;
+      text-align:center;
+      color:var(--muted);
+      cursor:pointer;
+    }
+
+    .msg{
+      min-height:20px;
+      margin-top:10px;
+      font-size:14px;
+      color:var(--text);
+    }
+
+    .layout{
+      display:flex;
+      height:100vh;
+      width:100%;
+    }
+
+    .sidebar{
+      width:300px;
+      background:rgba(10,10,10,.90);
+      border-right:1px solid var(--line);
+      display:flex;
+      flex-direction:column;
+    }
+
+    .sidebar-top{
+      padding:18px;
+      border-bottom:1px solid var(--line);
+    }
+
+    .logo{
+      font-size:22px;
+      font-weight:700;
+      color:var(--gold-2);
+      margin-bottom:8px;
+    }
+
+    .user-badge{
+      font-size:13px;
+      color:var(--muted);
+      margin-bottom:14px;
+    }
+
+    .sidebar .btn-gold,
+    .sidebar .btn-red{
+      width:100%;
+      padding:12px;
+      margin-bottom:10px;
+    }
+
+    .btn-red{
+      color:#fff;
+      background:linear-gradient(135deg,#f08c8c,#d95555,#a82d2d);
+    }
+
+    .search{
+      width:100%;
+      padding:12px;
+      border-radius:12px;
+      border:1px solid var(--line);
+      background:#111;
+      color:var(--text);
+      outline:none;
+      margin-top:6px;
+    }
+
+    .chat-list{
+      flex:1;
+      overflow-y:auto;
+      padding:12px;
+    }
+
+    .chat-item{
+      padding:12px;
+      border-radius:12px;
+      margin-bottom:10px;
+      background:rgba(255,255,255,.03);
+      border:1px solid transparent;
+      color:var(--text);
+      cursor:pointer;
+    }
+
+    .chat-item.active{
+      background:rgba(212,175,55,.10);
+      border-color:rgba(212,175,55,.35);
+    }
+
+    .chat-title{
+      font-weight:700;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .chat-preview{
+      margin-top:4px;
+      font-size:12px;
+      color:var(--muted);
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+
+    .main{
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      min-width:0;
+    }
+
+    .topbar{
+      padding:18px 22px;
+      border-bottom:1px solid var(--line);
+      font-size:22px;
+      font-weight:700;
+      color:var(--gold-2);
+      background:rgba(0,0,0,.20);
+    }
+
+    .chat-box{
+      flex:1;
+      overflow-y:auto;
+      padding:22px;
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
+
+    .bubble{
+      max-width:78%;
+      padding:14px 16px;
+      border-radius:18px;
+      line-height:1.5;
+      white-space:pre-wrap;
+      word-break:break-word;
+    }
+
+    .user{
+      align-self:flex-end;
+      background:linear-gradient(135deg,#9a7616,var(--gold));
+      color:#111;
+      border-bottom-right-radius:6px;
+      font-weight:700;
+    }
+
+    .assistant{
+      align-self:flex-start;
+      background:linear-gradient(135deg,#171717,#242424);
+      color:var(--text);
+      border:1px solid var(--line);
+      border-bottom-left-radius:6px;
+    }
+
+    .typing{
+      opacity:.75;
+      font-style:italic;
+    }
+
+    .input-area{
+      padding:16px;
+      border-top:1px solid var(--line);
+      background:rgba(10,10,10,.85);
+    }
+
+    .row{
+      display:flex;
+      gap:12px;
+    }
+
+    textarea{
+      flex:1;
+      min-height:58px;
+      max-height:140px;
+      resize:none;
+      padding:14px 16px;
+      border-radius:14px;
+      border:1px solid var(--line);
+      background:#111;
+      color:var(--text);
+      outline:none;
+      font-family:Arial,sans-serif;
+      font-size:15px;
+    }
+
+    .send{
+      min-width:96px;
+      padding:14px 18px;
+      color:#111;
+      background:linear-gradient(135deg,var(--gold-2),var(--gold),#9a7616);
+    }
+
+    @media (max-width: 900px){
+      .sidebar{width:260px;}
+      .bubble{max-width:88%;}
+    }
+  </style>
 </head>
 <body>
+  <div id="authScreen" class="auth-wrap">
+    <div class="auth-card">
+      <div class="title">✨ Mini ChatGPT</div>
+      <div class="sub" id="authModeText">Giriş yap</div>
 
-<div id="login">
-  <input id="user" placeholder="kullanıcı"><br>
-  <input id="pass" placeholder="şifre"><br>
-  <button onclick="login()">Giriş</button>
-</div>
+      <input id="username" type="text" placeholder="Kullanıcı adı" />
+      <input id="password" type="password" placeholder="Şifre" />
+      <input id="password2" type="password" placeholder="Şifre tekrar" class="hidden" />
 
-<div id="app" style="display:none">
-  <div id="chat"></div>
-
-  <div id="drop" style="border:1px dashed white;padding:10px;margin:10px">
-    sürükle bırak
+      <button id="authBtn" class="btn btn-gold" onclick="handleAuth()">Giriş Yap</button>
+      <div class="switch" onclick="toggleMode()" id="switchText">Hesabın yok mu? Kayıt ol</div>
+      <div class="msg" id="authMessage"></div>
+    </div>
   </div>
 
-  <input id="msg">
-  <button onclick="send()">Gönder</button>
-</div>
+  <div id="appScreen" class="layout hidden">
+    <div class="sidebar">
+      <div class="sidebar-top">
+        <div class="logo">✨ Mini ChatGPT</div>
+        <div class="user-badge" id="userBadge"></div>
 
-<script>
-const API="https://mini-chatgpt-backend-7t79.onrender.com"
+        <button class="btn btn-gold" onclick="createNewChat()">+ Yeni Chat</button>
+        <button class="btn btn-gold" onclick="logout()">Çıkış Yap</button>
+        <button class="btn btn-red" onclick="clearAllChats()">Tüm Chatleri Sil</button>
 
-let user=null, chat_id=null, img=null
+        <input id="chatSearch" class="search" placeholder="Chat ara..." oninput="renderChatList()" />
+      </div>
 
-function login(){
- fetch(API+"/login",{
-  method:"POST",
-  headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({
-    username:user.value,
-    password:pass.value
-  })
- }).then(r=>r.json()).then(d=>{
-  if(d.success){
-    user=d.username
-    loginDiv.style.display="none"
-    app.style.display="block"
-  }
- })
-}
+      <div class="chat-list" id="chatList"></div>
+    </div>
 
-drop.ondrop=e=>{
- e.preventDefault()
- let f=e.dataTransfer.files[0]
- let r=new FileReader()
- r.onload=()=>img=r.result
- r.readAsDataURL(f)
-}
-drop.ondragover=e=>e.preventDefault()
+    <div class="main">
+      <div class="topbar" id="chatTitle">Yeni Sohbet</div>
+      <div class="chat-box" id="chatBox"></div>
 
-function send(){
- fetch(API+"/chat",{
-  method:"POST",
-  headers:{"Content-Type":"application/json"},
-  body:JSON.stringify({
-    username:user,
-    chat_id:chat_id,
-    message:msg.value,
-    image_base64:img
-  })
- }).then(r=>r.json()).then(d=>{
-  chat.innerHTML+= "<div>"+msg.value+"</div>"
-  chat.innerHTML+= "<div>"+d.reply+"</div>"
-  chat_id=d.chat_id
- })
-}
-</script>
+      <div class="input-area">
+        <div class="row">
+          <textarea id="msg" placeholder="Mesajınızı yazın..."></textarea>
+          <button class="btn send" onclick="send()">Gönder</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
+  <script>
+    const API_BASE = "https://mini-chatgpt-backend-7t79.onrender.com";
+
+    let isLoginMode = true;
+    let currentUser = null;
+    let currentChatId = null;
+
+    function getSavedUser() {
+      const v = localStorage.getItem("mini_chatgpt_user");
+      if (!v || v === "undefined" || v === "null") return null;
+      return v;
+    }
+
+    async function api(path, method = "GET", body = null) {
+      const options = { method, headers: {} };
+      if (body) {
+        options.headers["Content-Type"] = "application/json";
+        options.body = JSON.stringify(body);
+      }
+
+      const res = await fetch(API_BASE + path, options);
+      let data = null;
+
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+
+      if (!res.ok) {
+        let msg = "İstek başarısız";
+        if (data?.detail) msg = typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail);
+        else if (data?.message) msg = typeof data.message === "string" ? data.message : JSON.stringify(data.message);
+        throw new Error(msg);
+      }
+
+      return data;
+    }
+
+    function toggleMode() {
+      isLoginMode = !isLoginMode;
+      document.getElementById("authModeText").textContent = isLoginMode ? "Giriş yap" : "Kayıt ol";
+      document.getElementById("authBtn").textContent = isLoginMode ? "Giriş Yap" : "Kayıt Ol";
+      document.getElementById("switchText").textContent = isLoginMode
+        ? "Hesabın yok mu? Kayıt ol"
+        : "Zaten hesabın var mı? Giriş yap";
+      document.getElementById("password2").classList.toggle("hidden", isLoginMode);
+      document.getElementById("authMessage").textContent = "";
+    }
+
+    async function handleAuth() {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+      const password2 = document.getElementById("password2").value.trim();
+      const authMessage = document.getElementById("authMessage");
+
+      if (!username || !password) {
+        authMessage.textContent = "Kullanıcı adı ve şifre gir.";
+        return;
+      }
+
+      if (!isLoginMode) {
+        if (!password2) {
+          authMessage.textContent = "Şifre tekrar alanını doldur.";
+          return;
+        }
+        if (password !== password2) {
+          authMessage.textContent = "Şifreler eşleşmiyor.";
+          return;
+        }
+      }
+
+      try {
+        const data = await api(isLoginMode ? "/login" : "/register", "POST", {
+          username,
+          password
+        });
+
+        if (!isLoginMode) {
+          authMessage.textContent = data.success ? "Kayıt başarılı. Şimdi giriş yap." : "Kayıt başarısız.";
+          if (data.success) {
+            isLoginMode = true;
+            toggleMode();
+            toggleMode();
+          }
+          return;
+        }
+
+        if (!data.success) {
+          authMessage.textContent = "Giriş başarısız.";
+          return;
+        }
+
+        currentUser = data.username || username;
+        localStorage.setItem("mini_chatgpt_user", currentUser);
+        await startApp();
+      } catch (e) {
+        authMessage.textContent = e.message || "Bağlantı hatası";
+      }
+    }
+
+    async function startApp() {
+      currentUser = getSavedUser();
+      if (!currentUser) {
+        document.getElementById("authScreen").classList.remove("hidden");
+        document.getElementById("appScreen").classList.add("hidden");
+        return;
+      }
+
+      document.getElementById("authScreen").classList.add("hidden");
+      document.getElementById("appScreen").classList.remove("hidden");
+      document.getElementById("userBadge").textContent = "Kullanıcı: " + currentUser;
+
+      const chats = await api("/chats/" + encodeURIComponent(currentUser));
+      if (!Array.isArray(chats) || chats.length === 0) {
+        await createNewChat();
+      } else {
+        currentChatId = Number(chats[0].id);
+        await renderChatList();
+        await renderMessages();
+      }
+    }
+
+    async function createNewChat() {
+      const result = await api("/chats/create", "POST", { username: currentUser });
+      if (result.success) {
+        currentChatId = Number(result.chat_id);
+        await renderChatList();
+        await renderMessages();
+      }
+    }
+
+    function logout() {
+      localStorage.removeItem("mini_chatgpt_user");
+      currentUser = null;
+      currentChatId = null;
+      location.reload();
+    }
+
+    async function clearAllChats() {
+      if (!confirm("Tüm sohbetleri silmek istiyor musun?")) return;
+      await api("/chats/clear", "POST", { username: currentUser });
+      await createNewChat();
+    }
+
+    async function deleteChat(chatId) {
+      await api("/chats/delete", "POST", { chat_id: Number(chatId) });
+
+      const chats = await api("/chats/" + encodeURIComponent(currentUser));
+      if (chats.length) {
+        currentChatId = Number(chats[0].id);
+      } else {
+        currentChatId = null;
+        await createNewChat();
+        return;
+      }
+      await renderChatList();
+      await renderMessages();
+    }
+
+    async function renderChatList() {
+      const list = document.getElementById("chatList");
+      const query = document.getElementById("chatSearch").value.trim().toLowerCase();
+      const chats = await api("/chats/" + encodeURIComponent(currentUser));
+
+      list.innerHTML = "";
+
+      chats
+        .filter(c => {
+          const t = (c.title || "").toLowerCase();
+          const p = (c.preview || "").toLowerCase();
+          return !query || t.includes(query) || p.includes(query);
+        })
+        .forEach(chat => {
+          const item = document.createElement("div");
+          item.className = "chat-item" + (Number(chat.id) === Number(currentChatId) ? " active" : "");
+          item.onclick = async () => {
+            currentChatId = Number(chat.id);
+            await renderChatList();
+            await renderMessages();
+          };
+
+          const title = document.createElement("div");
+          title.className = "chat-title";
+          title.textContent = chat.title || "Yeni Sohbet";
+
+          const preview = document.createElement("div");
+          preview.className = "chat-preview";
+          preview.textContent = chat.preview || "Boş sohbet";
+
+          const del = document.createElement("button");
+          del.className = "btn";
+          del.style.marginTop = "8px";
+          del.style.padding = "6px 10px";
+          del.style.background = "rgba(255,255,255,.08)";
+          del.style.color = "var(--text)";
+          del.textContent = "Sil";
+          del.onclick = async (e) => {
+            e.stopPropagation();
+            await deleteChat(chat.id);
+          };
+
+          item.appendChild(title);
+          item.appendChild(preview);
+          item.appendChild(del);
+          list.appendChild(item);
+        });
+    }
+
+    async function renderMessages() {
+      if (!currentChatId) return;
+
+      const messages = await api("/messages/" + Number(currentChatId));
+      const chats = await api("/chats/" + encodeURIComponent(currentUser));
+      const current = chats.find(c => Number(c.id) === Number(currentChatId));
+
+      document.getElementById("chatTitle").textContent = current?.title || "Yeni Sohbet";
+
+      const chatBox = document.getElementById("chatBox");
+      chatBox.innerHTML = "";
+
+      messages.forEach(m => {
+        const div = document.createElement("div");
+        div.className = "bubble " + (m.role === "user" ? "user" : "assistant");
+        div.textContent = m.content;
+        chatBox.appendChild(div);
+      });
+
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function send() {
+      const input = document.getElementById("msg");
+      const message = input.value.trim();
+
+      if (!currentUser) {
+        alert("Önce giriş yap.");
+        return;
+      }
+
+      if (!message) return;
+
+      const chatBox = document.getElementById("chatBox");
+      const typing = document.createElement("div");
+      typing.className = "bubble assistant typing";
+      typing.textContent = "Yazıyor...";
+      chatBox.appendChild(typing);
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      try {
+        const data = await api("/chat", "POST", {
+          username: currentUser,
+          chat_id: currentChatId ? Number(currentChatId) : null,
+          message: message,
+          image_base64: null,
+          chosen_language: "auto"
+        });
+
+        typing.remove();
+        input.value = "";
+
+        if (data.chat_id) {
+          currentChatId = Number(data.chat_id);
+        }
+
+        await renderChatList();
+        await renderMessages();
+      } catch (e) {
+        typing.remove();
+        alert(e.message || "Mesaj gönderilemedi.");
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      currentUser = getSavedUser();
+      if (currentUser) {
+        await startApp();
+      }
+    });
+
+    document.getElementById("msg").addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+  </script>
 </body>
 </html>
