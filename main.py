@@ -1,8 +1,11 @@
 import os
+import re
 import sqlite3
 import secrets
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -12,8 +15,14 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=[
+        "https://agyuzyunus-star.github.io",
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+    ],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -337,6 +346,174 @@ def build_language_instruction(chosen_language: str) -> str:
     return mapping.get(chosen_language, "Detect the user's language and answer in that language.")
 
 
+def normalize_text(text: str) -> str:
+    return (text or "").strip().lower()
+
+
+def detect_time_zone_from_message(message: str) -> tuple[str, str] | None:
+    msg = normalize_text(message)
+
+    zone_map = [
+        (["türkiye", "turkiye", "istanbul", "ankara", "izmir"], "Europe/Istanbul", "Türkiye"),
+        (["almanya", "germany", "augsburg", "berlin", "münih", "munich"], "Europe/Berlin", "Almanya"),
+        (["londra", "london", "ingiltere", "uk"], "Europe/London", "Londra"),
+        (["new york", "amerika", "usa", "abd"], "America/New_York", "New York"),
+        (["tokyo", "japonya", "japan"], "Asia/Tokyo", "Tokyo"),
+        (["paris", "fransa", "france"], "Europe/Paris", "Paris"),
+    ]
+
+    for keywords, tz, label in zone_map:
+        if any(k in msg for k in keywords):
+            return tz, label
+
+    return None
+
+
+def is_time_question(message: str) -> bool:
+    msg = normalize_text(message)
+    keywords = [
+        "saat kaç", "saat kac", "kaç saat", "kac saat",
+        "time", "what time", "uhr", "wie viel uhr"
+    ]
+    return any(k in msg for k in keywords)
+
+
+def answer_time_question(message: str) -> str | None:
+    if not is_time_question(message):
+        return None
+
+    zone_info = detect_time_zone_from_message(message)
+    if not zone_info:
+        zone_info = ("Europe/Berlin", "Almanya")
+
+    tz_name, label = zone_info
+    now = datetime.now(ZoneInfo(tz_name))
+    return f"Şu an {label}'da saat {now.strftime('%H:%M')}."
+
+
+def detect_weather_location(message: str) -> str | None:
+    msg = normalize_text(message)
+
+    known = {
+        "augsburg": "Augsburg",
+        "istanbul": "Istanbul",
+        "ankara": "Ankara",
+        "izmir": "Izmir",
+        "berlin": "Berlin",
+        "londra": "London",
+        "london": "London",
+        "münih": "Munich",
+        "munich": "Munich",
+    }
+
+    for k, v in known.items():
+        if k in msg:
+            return v
+
+    match = re.search(r"(?:weather in|hava durumu|hava nasıl|weather)\s+([a-zA-ZçğıöşüÇĞİÖŞÜ\s\-]+)", message, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+
+    return None
+
+
+def is_weather_question(message: str) -> bool:
+    msg = normalize_text(message)
+    keys = [
+        "hava", "weather", "sıcaklık", "sicaklik",
+        "yağmur", "yagmur", "rüzgar", "ruzgar"
+    ]
+    return any(k in msg for k in keys)
+
+
+def get_live_weather(location: str) -> str | None:
+    try:
+        url = f"https://wttr.in/{location}?format=j1"
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+
+        current = data["current_condition"][0]
+        temp_c = current.get("temp_C", "?")
+        feels = current.get("FeelsLikeC", "?")
+        humidity = current.get("humidity", "?")
+        desc = current.get("weatherDesc", [{"value": "Bilinmiyor"}])[0]["value"]
+
+        return (
+            f"{location} için güncel hava durumu: {desc}. "
+            f"Sıcaklık {temp_c}°C, hissedilen {feels}°C, nem %{humidity}."
+        )
+    except Exception:
+        return None
+
+
+def maybe_get_web_context(message: str) -> str:
+    msg = message.strip()
+    if not msg:
+        return ""
+
+    trigger_words = [
+        "araştır:", "arastir:", "search:", "web:",
+        "google", "internetten", "haber", "güncel", "guncel"
+    ]
+
+    should_search = any(t in normalize_text(msg) for t in trigger_words) or is_weather_question(msg) or is_time_question(msg)
+    if not should_search:
+        return ""
+
+    query = msg
+    for prefix in ["araştır:", "arastir:", "search:", "web:"]:
+        if normalize_text(query).startswith(prefix):
+            query = query.split(":", 1)[1].strip()
+            break
+
+    try:
+        resp = requests.get(
+            "https://api.duckduckgo.com/",
+            params={
+                "q": query,
+                "format": "json",
+                "no_html": "1",
+                "skip_disambig": "1"
+            },
+            timeout=15
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        parts = []
+        if data.get("Heading"):
+            parts.append(f"Konu: {data['Heading']}")
+        if data.get("AbstractText"):
+            parts.append(f"Özet: {data['AbstractText']}")
+
+        related = data.get("RelatedTopics", [])
+        count = 0
+        for item in related:
+            if isinstance(item, dict) and item.get("Text"):
+                parts.append("- " + item["Text"])
+                count += 1
+                if count >= 5:
+                    break
+
+        return "\n".join(parts[:8]).strip()
+    except Exception:
+        return ""
+
+
+def save_messages(conn, chat_id: int, user_text: str, assistant_text: str):
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
+        (chat_id, "user", user_text)
+    )
+    cur.execute(
+        "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
+        (chat_id, "assistant", assistant_text)
+    )
+    conn.commit()
+
+
 @app.post("/chat")
 def chat(req: ChatRequest):
     if not GROQ_API_KEY:
@@ -357,7 +534,6 @@ def chat(req: ChatRequest):
 
     chat_id = req.chat_id
 
-    # chat_id yoksa otomatik yeni sohbet oluştur
     if chat_id is None:
         cur.execute(
             "INSERT INTO chats (user_id, title) VALUES (?, ?)",
@@ -373,16 +549,60 @@ def chat(req: ChatRequest):
                 (user["id"], "Yeni Sohbet")
             )
             chat_id = cur.lastrowid
-            chat_row = {"id": chat_id, "title": "Yeni Sohbet"}
 
+    user_message = req.message.strip() if req.message.strip() else "Merhaba"
+
+    # 1) Saat sorularını direkt canlı saatle cevapla
+    direct_time_answer = answer_time_question(user_message)
+    if direct_time_answer and not req.image_base64:
+        save_messages(conn, chat_id, user_message, direct_time_answer)
+
+        cur.execute("SELECT title FROM chats WHERE id = ?", (chat_id,))
+        row = cur.fetchone()
+        current_title = row["title"] if row else "Yeni Sohbet"
+        if current_title == "Yeni Sohbet" and req.message.strip():
+            cur.execute(
+                "UPDATE chats SET title = ? WHERE id = ?",
+                (req.message.strip()[:25], chat_id)
+            )
+            conn.commit()
+
+        conn.close()
+        return {"reply": direct_time_answer, "chat_id": chat_id}
+
+    # 2) Hava durumunu internetten çek
+    if is_weather_question(user_message) and not req.image_base64:
+        location = detect_weather_location(user_message) or "Augsburg"
+        weather_answer = get_live_weather(location)
+        if weather_answer:
+            save_messages(conn, chat_id, user_message, weather_answer)
+
+            cur.execute("SELECT title FROM chats WHERE id = ?", (chat_id,))
+            row = cur.fetchone()
+            current_title = row["title"] if row else "Yeni Sohbet"
+            if current_title == "Yeni Sohbet" and req.message.strip():
+                cur.execute(
+                    "UPDATE chats SET title = ? WHERE id = ?",
+                    (req.message.strip()[:25], chat_id)
+                )
+                conn.commit()
+
+            conn.close()
+            return {"reply": weather_answer, "chat_id": chat_id}
+
+    # 3) Geçmiş mesajları topla
     cur.execute(
         "SELECT role, content FROM messages WHERE chat_id = ? ORDER BY id ASC",
         (chat_id,)
     )
     history_rows = cur.fetchall()
 
-    now = datetime.now().strftime("%H:%M")
+    now_berlin = datetime.now(ZoneInfo("Europe/Berlin")).strftime("%H:%M")
+    now_istanbul = datetime.now(ZoneInfo("Europe/Istanbul")).strftime("%H:%M")
+    now_london = datetime.now(ZoneInfo("Europe/London")).strftime("%H:%M")
+
     lang_instruction = build_language_instruction(req.chosen_language)
+    web_context = maybe_get_web_context(user_message)
 
     messages = [
         {
@@ -400,11 +620,21 @@ Rules:
 - Keep answers concise unless the user asks for more detail.
 - If an image is provided, analyze it carefully.
 - If both text and image are provided, use both together.
-- If the user asks for time, current local time is {now}.
-- If you are unsure, still try to help clearly.
+- For current time questions, use these reliable references:
+  - Germany (Europe/Berlin): {now_berlin}
+  - Turkey (Europe/Istanbul): {now_istanbul}
+  - London (Europe/London): {now_london}
+- If web research notes are available, use them.
+- If you are unsure, say what is certain and what is uncertain.
 """
         }
     ]
+
+    if web_context:
+        messages.append({
+            "role": "system",
+            "content": f"Güncel web notları:\n{web_context}"
+        })
 
     for row in history_rows:
         if row["role"] in ["user", "assistant", "system"]:
@@ -414,10 +644,10 @@ Rules:
             })
 
     try:
-        display_user_message = req.message.strip()
+        display_user_message = user_message
 
         if req.image_base64:
-            text_part = req.message.strip() if req.message.strip() else "Bu görseli analiz et."
+            text_part = user_message if user_message else "Bu görseli analiz et."
             messages.append({
                 "role": "user",
                 "content": [
@@ -438,8 +668,6 @@ Rules:
                 temperature=0.2
             )
         else:
-            user_message = req.message.strip() if req.message.strip() else "Merhaba"
-            display_user_message = user_message
             messages.append({"role": "user", "content": user_message})
 
             response = client.chat.completions.create(
@@ -450,14 +678,7 @@ Rules:
 
         reply = response.choices[0].message.content if response.choices else "Bir cevap alınamadı."
 
-        cur.execute(
-            "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
-            (chat_id, "user", display_user_message)
-        )
-        cur.execute(
-            "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
-            (chat_id, "assistant", reply)
-        )
+        save_messages(conn, chat_id, display_user_message, reply)
 
         cur.execute("SELECT title FROM chats WHERE id = ?", (chat_id,))
         row = cur.fetchone()
@@ -468,8 +689,8 @@ Rules:
                 "UPDATE chats SET title = ? WHERE id = ?",
                 (req.message.strip()[:25], chat_id)
             )
+            conn.commit()
 
-        conn.commit()
         conn.close()
 
         return {
