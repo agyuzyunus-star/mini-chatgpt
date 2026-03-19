@@ -12,12 +12,14 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://agyuzunus-star.github.io", # Kendi GitHub Pages adresin
+        "http://localhost:3000",           # Yerel testler için (isteğe bağlı)
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 client = OpenAI(
